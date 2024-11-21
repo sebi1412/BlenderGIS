@@ -358,7 +358,7 @@ class IMPORTGIS_OT_georaster(Operator, ImportHelper):
 				obj = None
 				subname = name[2:]
 				for o in scn.objects:
-					if subname in o.name:
+					if subname in o.name and not o.hide_viewport:
 						obj = o
 						break
 				if obj is None:
