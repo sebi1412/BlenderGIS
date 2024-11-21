@@ -140,6 +140,7 @@ def addTexture(mat, img, uvLay, name='texture'):
 	# Create BSDF diffuse node
 	diffuseNode = node_tree.nodes.new('ShaderNodeBsdfPrincipled')#ShaderNodeBsdfDiffuse
 	diffuseNode.location = (0, 200)
+	diffuseNode.inputs['Roughness'].default_value = 0.9 # Medium roughness
 	# Create output node
 	outputNode = node_tree.nodes.new('ShaderNodeOutputMaterial')
 	outputNode.location = (400, 200)
