@@ -22,6 +22,7 @@
 import bpy
 import bmesh
 import os
+import re
 import math
 from mathutils import Vector
 import numpy as np#Ship with Blender since 2.70
@@ -115,6 +116,12 @@ class IMPORTGIS_OT_georaster(Operator, ImportHelper):
 			items=listSubdivisionModes
 			)
 	#
+	baseOnSelectMesh: BoolProperty(
+			name="Define the mesh youself",
+			description="Define it yourself of let the algorithm seek it",
+			default=True
+			)
+	#
 	demOnMesh: BoolProperty(
 			name="Apply on existing mesh",
 			description="Use DEM as displacer for an existing mesh",
@@ -157,10 +164,12 @@ class IMPORTGIS_OT_georaster(Operator, ImportHelper):
 			pass
 		#
 		if self.importMode == 'MESH':
-			if geoscn.isGeoref and len(self.objectsLst) > 0:
-				layout.prop(self, 'objectsLst')
-			else:
-				layout.label(text="There isn't georef mesh to UVmap on")
+			layout.prop(self, 'baseOnSelectMesh')
+			if self.baseOnSelectMesh:
+				if geoscn.isGeoref and len(self.objectsLst) > 0:
+					layout.prop(self, 'objectsLst')
+				else:
+					layout.label(text="There isn't georef mesh to UVmap on")
 		#
 		if self.importMode == 'DEM':
 			layout.prop(self, 'demOnMesh')
@@ -343,7 +352,18 @@ class IMPORTGIS_OT_georaster(Operator, ImportHelper):
 				self.report({'ERROR'}, "There isn't georef mesh to apply on")
 				return {'CANCELLED'}
 			# Get choosen object
-			obj = scn.objects[int(self.objectsLst)]
+			if self.baseOnSelectMesh:
+				obj = scn.objects[int(self.objectsLst)]
+			else:
+				obj = None
+				subname = name[2:]
+				for o in scn.objects:
+					if subname in o.name:
+						obj = o
+						break
+				if obj is None:
+					return {'CANCELLED'}
+
 			# Select and active this obj
 			obj.select_set(True)
 			context.view_layer.objects.active = obj
