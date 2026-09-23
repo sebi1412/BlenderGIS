@@ -112,13 +112,13 @@ class IMPORTGIS_OT_georaster(Operator, ImportHelper):
 
 	subdivision: EnumProperty(
 			name="Subdivision",
-			description="How to subdivise the plane (dispacer needs vertex to work with)",
+			description="How to subdivide the plane (displacer needs vertices to work with)",
 			items=listSubdivisionModes
 			)
 	#
 	baseOnSelectMesh: BoolProperty(
-			name="Define the mesh youself",
-			description="Define it yourself of let the algorithm seek it",
+			name="Define the mesh yourself",
+			description="Define it yourself or let the algorithm seek it",
 			default=True
 			)
 	#
@@ -217,7 +217,7 @@ class IMPORTGIS_OT_georaster(Operator, ImportHelper):
 		return context.mode == 'OBJECT'
 
 	files: CollectionProperty(
-        name="BVH files",
+        name="Raster files",
         type=OperatorFileListElement,
         )
 	
@@ -261,11 +261,6 @@ class IMPORTGIS_OT_georaster(Operator, ImportHelper):
 			rprj = False
 			rprjToRaster = None
 			rprjToScene = None
-
-		#Path
-
-		for file in self.files:
-			print("t")
 
 		filePath = nfilepath # self.filepath
 		name = os.path.basename(filePath)[:-4]
