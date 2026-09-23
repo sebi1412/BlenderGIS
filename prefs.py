@@ -9,7 +9,7 @@ from bpy.types import Operator, Panel, AddonPreferences
 import addon_utils
 
 from . import bl_info
-from .core.proj.reproj import EPSGIO
+from .core.proj.reproj import MapTilerCoordinates
 from .core.proj.srs import SRS
 from .core.checkdeps import HAS_GDAL, HAS_PYPROJ, HAS_PIL, HAS_IMGIO
 from .core import settings
@@ -116,7 +116,7 @@ class BGIS_PREFS(AddonPreferences):
 			items.append( ('PYPROJ', 'pyProj', 'Force pyProj as reprojection engine') )
 		#if EPSGIO.ping(): #too slow
 		#	items.append( ('EPSGIO', 'epsg.io', '') )
-		items.append( ('EPSGIO', 'epsg.io', 'Force epsg.io as reprojection engine') )
+		items.append( ('EPSGIO', 'epsg.io / MapTilerCoords', 'Force epsg.io as reprojection engine') )
 		items.append( ('BUILTIN', 'Built in', 'Force reprojection through built in Python functions') )
 		return items
 
@@ -173,24 +173,43 @@ class BGIS_PREFS(AddonPreferences):
 	################
 	#Basemaps
 
+	def getCacheFolder5x(self, v, isSet):
+		return bpy.path.abspath(v)
+
 	def getCacheFolder(self):
 		return bpy.path.abspath(self.get("cacheFolder", ''))
+
+	def setCacheFolder5x(self, newVal, currentVal, isSet):
+		if os.access(newVal, os.X_OK | os.W_OK):
+			return newVal
+		else:
+			log.error("The selected cache folder has no write access")
 
 	def setCacheFolder(self, value):
 		if os.access(value, os.X_OK | os.W_OK):
 			self["cacheFolder"] = value
 		else:
-			log.error("The selected cache folder has no write access")
 			self["cacheFolder"] = "The selected folder has no write access"
 
-	cacheFolder: StringProperty(
-		name = "Cache folder",
-		default = APP_DATA, #Does not works !?
-		description = "Define a folder where to store Geopackage SQlite db",
-		subtype = 'DIR_PATH',
-		get = getCacheFolder,
-		set = setCacheFolder
-		)
+	if bpy.app.version[0] >= 5 :
+		cacheFolder: StringProperty(
+			name = "Cache folder",
+			default = APP_DATA, #Does not works !?
+			description = "Define a folder where to store Geopackage SQlite db",
+			subtype = 'DIR_PATH',
+			get_transform = getCacheFolder5x,
+			set_transform = setCacheFolder5x
+			)
+	else:
+		cacheFolder: StringProperty(
+			name = "Cache folder",
+			default = APP_DATA, #Does not works !?
+			description = "Define a folder where to store Geopackage SQlite db",
+			subtype = 'DIR_PATH',
+			get = getCacheFolder,
+			set = setCacheFolder
+			)
+
 
 	synchOrj: BoolProperty(
 		name="Synch. lat/long",
@@ -242,6 +261,14 @@ class BGIS_PREFS(AddonPreferences):
 		description="you need to register and request a key from opentopography website"
 	)
 
+	def updateMapTilerApiKey(self, context):
+		settings.maptiler_api_key = self.maptiler_api_key
+
+	maptiler_api_key: StringProperty(
+		name = "",
+		description = "API key for MapTiler Coordinates API (required for EPSG.io migration)",
+		update = updateMapTilerApiKey
+	)
 
 	################
 	#IO options
@@ -330,9 +357,14 @@ class BGIS_PREFS(AddonPreferences):
 		row.operator("bgis.rmv_dem_server", icon='REMOVE')
 		row.operator("bgis.reset_dem_server", icon='PLAY_REVERSE')
 
-		row = box.row()
+		row = box.row().split(factor=0.2)
 		row.label(text="Opentopography Api Key")
-		box.row().prop(self, "opentopography_api_key")
+		row.prop(self, "opentopography_api_key")
+
+		row = box.row().split(factor=0.2)
+		row.label(text="MapTiler API Key")
+		row.prop(self, "maptiler_api_key")
+
 		#System
 		box = layout.box()
 		box.label(text='System')
@@ -387,27 +419,33 @@ class BGIS_OT_add_predef_crs(Operator):
 		return True
 
 	def search(self, context):
-		if not EPSGIO.ping():
-			self.report({'ERROR'}, "Cannot request epsg.io website")
-		else:
-			results = EPSGIO.search(self.query)
-			self.results = json.dumps(results)
-			if results:
-				self.crs = 'EPSG:' + results[0]['code']
-				self.name = results[0]['name']
+
+		apiKey = settings.maptiler_api_key
+
+		if not apiKey:
+			#self.report({'ERROR'}, "MapTiler API key is required. Please set it in the preferences.") #report is not available outsite of the execute function
+			log.error("No Maptiler API key")
+			return
+
+		mtc = MapTilerCoordinates(apiKey=apiKey)
+		results = mtc.search(self.query)
+		self.results = json.dumps(results)
+		if results:
+			self.crs = 'EPSG:' + str(results[0]['id']['code'])
+			self.name = results[0]['name']
 
 	def updEnum(self, context):
 		crsItems = []
 		if self.results != '':
 			for result in json.loads(self.results):
-				srid = 'EPSG:' + result['code']
-				crsItems.append( (result['code'], result['name'], srid) )
+				srid = 'EPSG:' + str(result['id']['code'])
+				crsItems.append( (str(result['id']['code']), result['name'], srid) )
 		return crsItems
 
 	def fill(self, context):
 		if self.results != '':
-			crs = [crs for crs in json.loads(self.results) if crs['code'] == self.crsEnum][0]
-			self.crs = 'EPSG:' + crs['code']
+			crs = [crs for crs in json.loads(self.results) if str(crs['id']['code']) == self.crsEnum][0]
+			self.crs = 'EPSG:' + str(crs['id']['code'])
 			self.desc = crs['name']
 
 	query: StringProperty(name='Query', description='Hit enter to process the search', update=search)
@@ -427,8 +465,13 @@ class BGIS_OT_add_predef_crs(Operator):
 		layout = self.layout
 		layout.prop(self, 'search')
 		if self.search:
-			layout.prop(self, 'query')
-			layout.prop(self, 'crsEnum')
+			prefs = context.preferences.addons[PKG].preferences
+			if not prefs.maptiler_api_key:
+				layout.label(text="Searching require a MapTiler API key", icon_value=3)
+				layout.prop(prefs, "maptiler_api_key", text='API Key')
+			else:
+				layout.prop(self, 'query')
+				layout.prop(self, 'crsEnum')
 			layout.separator()
 		layout.prop(self, 'crs')
 		layout.prop(self, 'name')
